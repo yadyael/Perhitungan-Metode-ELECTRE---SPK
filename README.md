@@ -215,9 +215,9 @@ File `.xlsx` yang dihasilkan terdiri dari 13 sheet:
 ## 👩‍💻 Pengembang
 
 Dibuat sebagai Final Project mata kuliah **Sistem Pendukung Keputusan**.
+---
 Developer:  Yadya
 Olah Data:  Oktavia 
----
 
 ## 📄 Lisensi
 
