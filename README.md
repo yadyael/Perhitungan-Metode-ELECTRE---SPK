@@ -86,7 +86,7 @@ Metode-ELECTRE/
 
 **1. Clone repositori**
 ```bash
-git clone https://github.com/username/nama-repo.git
+git clone https://github.com/yadyael/Perhitungan-Metode-ELECTRE---SPK.git
 cd nama-repo
 ```
 
@@ -99,7 +99,7 @@ composer require "phpoffice/phpspreadsheet:^1.29"
 
 **3. Import database**
 
-Buat database baru di phpMyAdmin, lalu import file `electre_spk.sql` yang tersedia di folder `database/`.
+Buat database baru di phpMyAdmin, lalu import file `electre_spk.sql` yang tersedia di folder `config/`.
 
 **4. Konfigurasi koneksi**
 
@@ -113,7 +113,7 @@ $db   = 'electre-spk';
 
 **5. Jalankan**
 
-Akses lewat browser: `http://localhost/nama-repo/`
+Akses lewat browser: `http://localhost/Perhitungan-Metode-ELECTRE---SPK/`
 
 ---
 
@@ -215,7 +215,8 @@ File `.xlsx` yang dihasilkan terdiri dari 13 sheet:
 ## 👩‍💻 Pengembang
 
 Dibuat sebagai Final Project mata kuliah **Sistem Pendukung Keputusan**.
-
+Developer:  Yadya
+Olah Data:  Oktavia 
 ---
 
 ## 📄 Lisensi
