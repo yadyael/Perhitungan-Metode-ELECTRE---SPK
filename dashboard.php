@@ -368,7 +368,7 @@ h1{
                 <h3>Input Nilai</h3>
                 <p>Masukkan nilai setiap alternatif.</p>
             </a>
-            <a href="hasil/index.php" class="quick-card">
+            <a href="hasil/ranking.php" class="quick-card">
                 <h3>Ranking Φ</h3>
                 <p>Lihat hasil prioritas daerah.</p>
             </a>

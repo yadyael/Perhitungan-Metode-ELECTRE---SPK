@@ -6,6 +6,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../config/db.php';
 
+$pageTitle    = 'Data Alternatif';   // wajib
+$pageSubtitle = 'Kelola Data Kabupaten dan Kota';
+
 /* =========================
    TAMBAH 
 ========================= */
@@ -524,6 +527,7 @@ tbody td {
 <body>
     <div class="wrapper">
         <?php include '../includes/sidebar.php'; ?>
+        <?php include '../includes/header.php'; ?>
         <main class="content">
             <div class="hero">
                 <p class="hero-label">SPK ELECTRE I</p>

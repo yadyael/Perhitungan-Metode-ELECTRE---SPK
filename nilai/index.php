@@ -6,6 +6,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 require_once '../config/db.php';
 
+$pageTitle    = 'Data Nilai';   // wajib
+$pageSubtitle = 'KElola Data Nilai Alternatif Setiap Kriteria';
+
 /* =========================
    PROSES SIMPAN NILAI (AJAX)
 ========================= */
@@ -723,6 +726,7 @@ td.actions {
 <body>
 <div class="wrapper">
     <?php include '../includes/sidebar.php'; ?>
+    <?php include '../includes/header.php'; ?>
 
     <main class="content">
 

@@ -30,22 +30,6 @@ if (
 }
 
 /* =========================
-   AJAX: DETAIL HIMPUNAN C/D UNTUK 1 PASANGAN
-========================= */
-if (isset($_GET['ajax_himpunan']) && $_GET['ajax_himpunan'] === '1') {
-    header('Content-Type: application/json');
-    $altI = intval($_GET['alt_i'] ?? 0);
-    $altJ = intval($_GET['alt_j'] ?? 0);
-    try {
-        $data = getHimpunanCD($conn, $altI, $altJ);
-        echo json_encode(['status' => 'success', 'data' => $data]);
-    } catch (Exception $e) {
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-    }
-    exit();
-}
-
-/* =========================
    AMBIL DATA UTAMA
 ========================= */
 $alternatif = [];
@@ -92,6 +76,8 @@ if ($hasResult) {
         ORDER BY h.ranking ASC
     ");
     while ($row = $res->fetch_assoc()) $hasil[] = $row;
+
+    $himpunanCD = getSemuaHimpunanCD($conn);
 }
 
 function fmt($val, $dec = 4) {
@@ -236,7 +222,8 @@ body {
 }
 
 .status-card .value {
-    font-size: 40px;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 32px;
     font-weight: 700;
     color: var(--text-dark);
 }
@@ -530,6 +517,78 @@ table.matrix td.diag {
 
 .legend-grid .legend-name { color: var(--text-dark); }
 .legend-grid .legend-prov { color: var(--text-soft); font-size: 11.5px; }
+
+/* ===========================
+   HIMPUNAN C/D — DUA KOLOM TABEL PENUH
+=========================== */
+.himpunan-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 900px) {
+    .himpunan-cols { grid-template-columns: 1fr; }
+}
+
+.himpunan-col-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid;
+}
+
+.himpunan-col-title.c { color: #2e7d81; border-color: rgba(75,157,169,0.3); }
+.himpunan-col-title.d { color: #b8501e; border-color: rgba(227,116,52,0.3); }
+
+.himpunan-scroll {
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.himpunan-scroll::-webkit-scrollbar { width: 8px; }
+.himpunan-scroll::-webkit-scrollbar-thumb {
+    background: rgba(75,157,169,0.3);
+    border-radius: 10px;
+}
+
+table.himpunan-set {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+table.himpunan-set thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(75,157,169,0.12);
+    color: var(--teal-mid);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 14px;
+    text-align: left;
+    z-index: 1;
+}
+
+table.himpunan-set tbody td {
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(75,157,169,0.08);
+}
+
+table.himpunan-set tbody tr:hover { background: rgba(255,255,255,0.4); }
+
+td.pair-cell {
+    font-weight: 700;
+    color: var(--text-dark);
+    white-space: nowrap;
+    width: 90px;
+}
+
+.set-empty { color: var(--text-soft); font-style: italic; }
 
 /* ===========================
    PAIR SELECTOR (HIMPUNAN C/D)
@@ -955,65 +1014,77 @@ table.final tbody tr:hover { background: rgba(255,255,255,0.4); }
                 </div>
             </div>
 
-            <!-- 4. HIMPUNAN CONCORDANCE & DISCORDANCE (VIEWER) -->
+            <!-- 4. HIMPUNAN CONCORDANCE & DISCORDANCE (TABEL LENGKAP) -->
             <div class="acc-item">
                 <div class="acc-header" onclick="toggleAcc(this)">
                     <div class="acc-header-left">
                         <div class="acc-step">4</div>
                         <div class="acc-title">
                             <h3>Himpunan Concordance &amp; Discordance</h3>
-                            <p>Pilih dua daerah untuk melihat kriteria mana yang masuk himpunan C dan D.</p>
+                            <p>Seluruh pasangan (i,j) beserta himpunan kriteria yang masuk C dan D.</p>
                         </div>
                     </div>
                     <i class="fa-solid fa-chevron-down acc-chevron"></i>
                 </div>
                 <div class="acc-body">
                     <div class="legend-note">
-                        Himpunan <strong>C (Concordance)</strong>: kriteria di mana Daerah I "lebih baik atau sama"
-                        dibanding Daerah J (benefit: V<sub>i</sub> ≥ V<sub>j</sub>, cost: V<sub>i</sub> ≤ V<sub>j</sub>).
-                        Sisanya masuk himpunan <strong>D (Discordance)</strong>.
+                        <strong>C(i,j)</strong>: himpunan kriteria di mana alternatif i "lebih baik atau sama"
+                        dibanding alternatif j (benefit: V<sub>i</sub> ≥ V<sub>j</sub>, cost: V<sub>i</sub> ≤ V<sub>j</sub>).
+                        <strong>D(i,j)</strong>: sisanya. i, j mengacu pada nomor urut pada legenda di bawah.
                     </div>
 
-                    <div class="pair-form">
-                        <div class="pair-field">
-                            <label for="selAltI">Daerah I</label>
-                            <select id="selAltI">
-                                <?php foreach ($alternatif as $alt): ?>
-                                    <option value="<?= $alt['id'] ?>"><?= htmlspecialchars($alt['nama_daerah'] . ' — ' . $alt['provinsi']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="pair-field">
-                            <label for="selAltJ">Daerah J</label>
-                            <select id="selAltJ">
-                                <?php foreach ($alternatif as $alt): ?>
-                                    <option value="<?= $alt['id'] ?>" <?= isset($alternatif[1]) && $alt['id'] == $alternatif[1]['id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($alt['nama_daerah'] . ' — ' . $alt['provinsi']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <button class="btn-lihat" onclick="lihatHimpunan()">
-                            <i class="fa-solid fa-magnifying-glass"></i> Lihat Himpunan
-                        </button>
-                    </div>
+                    <?php renderLegend($alternatif, $altIndex); ?>
 
-                    <div class="himpunan-result" id="himpunanResult">
-                        <div class="himpunan-summary" id="himpunanSummary"></div>
-                        <table class="himpunan">
-                            <thead>
-                                <tr>
-                                    <th>Kode</th>
-                                    <th>Kriteria</th>
-                                    <th class="center">Tipe</th>
-                                    <th class="center">Bobot</th>
-                                    <th class="center">V (Daerah I)</th>
-                                    <th class="center">V (Daerah J)</th>
-                                    <th class="center">Himpunan</th>
-                                </tr>
-                            </thead>
-                            <tbody id="himpunanBody"></tbody>
-                        </table>
+                    <div class="himpunan-cols">
+                        <div class="himpunan-col">
+                            <h4 class="himpunan-col-title c">Himpunan Concordance — C(i,j)</h4>
+                            <div class="matrix-scroll himpunan-scroll">
+                                <table class="himpunan-set">
+                                    <thead>
+                                        <tr><th>Pasangan</th><th>Himpunan C(i,j)</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($himpunanCD['concordance'] as $row): ?>
+                                        <tr>
+                                            <td class="pair-cell">C(<?= $row['i'] ?>,<?= $row['j'] ?>)</td>
+                                            <td>
+                                                <?php if (empty($row['kode_set'])): ?>
+                                                    <span class="set-empty">{ }</span>
+                                                <?php else: ?>
+                                                    { <?= htmlspecialchars(implode(', ', $row['kode_set'])) ?> }
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="himpunan-col">
+                            <h4 class="himpunan-col-title d">Himpunan Discordance — D(i,j)</h4>
+                            <div class="matrix-scroll himpunan-scroll">
+                                <table class="himpunan-set">
+                                    <thead>
+                                        <tr><th>Pasangan</th><th>Himpunan D(i,j)</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($himpunanCD['discordance'] as $row): ?>
+                                        <tr>
+                                            <td class="pair-cell">D(<?= $row['i'] ?>,<?= $row['j'] ?>)</td>
+                                            <td>
+                                                <?php if (empty($row['kode_set'])): ?>
+                                                    <span class="set-empty">{ }</span>
+                                                <?php else: ?>
+                                                    { <?= htmlspecialchars(implode(', ', $row['kode_set'])) ?> }
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1239,68 +1310,6 @@ function jalankanHitung() {
                 btn.innerHTML = originalHtml;
             });
     });
-}
-
-/* ===========================
-   VIEWER HIMPUNAN C/D
-=========================== */
-function lihatHimpunan() {
-    const altI = document.getElementById('selAltI').value;
-    const altJ = document.getElementById('selAltJ').value;
-
-    if (altI === altJ) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Pilih Daerah Berbeda',
-            text: 'Daerah I dan Daerah J tidak boleh sama.',
-            confirmButtonColor: '#E37434',
-        });
-        return;
-    }
-
-    fetch(`index.php?ajax_himpunan=1&alt_i=${altI}&alt_j=${altJ}`)
-        .then(res => res.json())
-        .then(data => {
-            if (data.status !== 'success') {
-                Swal.fire({ icon: 'error', title: 'Gagal', text: data.message, confirmButtonColor: '#E37434' });
-                return;
-            }
-
-            const tbody = document.getElementById('himpunanBody');
-            tbody.innerHTML = '';
-
-            let totalC = 0, totalD = 0;
-            data.data.forEach(row => {
-                const tr = document.createElement('tr');
-                const isC = row.himpunan === 'C';
-                if (isC) totalC++; else totalD++;
-
-                tr.innerHTML = `
-                    <td><strong>${row.kode}</strong></td>
-                    <td>${row.nama_kriteria}</td>
-                    <td class="center" style="text-transform:capitalize;">${row.tipe}</td>
-                    <td class="center">${Number(row.bobot).toFixed(2)}</td>
-                    <td class="center">${Number(row.v_i).toFixed(4)}</td>
-                    <td class="center">${Number(row.v_j).toFixed(4)}</td>
-                    <td class="center">
-                        <span class="badge-himpunan ${isC ? 'c' : 'd'}">
-                            <i class="fa-solid ${isC ? 'fa-check' : 'fa-xmark'}"></i> ${row.himpunan}
-                        </span>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            document.getElementById('himpunanSummary').innerHTML = `
-                <div><strong>${totalC}</strong> kriteria masuk himpunan Concordance (C)</div>
-                <div><strong>${totalD}</strong> kriteria masuk himpunan Discordance (D)</div>
-            `;
-
-            document.getElementById('himpunanResult').classList.add('show');
-        })
-        .catch(() => {
-            Swal.fire({ icon: 'error', title: 'Koneksi Error', text: 'Gagal memuat data himpunan.', confirmButtonColor: '#E37434' });
-        });
 }
 </script>
 </body>
