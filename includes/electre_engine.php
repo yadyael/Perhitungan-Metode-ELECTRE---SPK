@@ -521,3 +521,259 @@ function getHimpunanCD(mysqli $conn, int $altI, int $altJ): array
 
     return $hasil;
 }
+
+/**
+ * Hitung himpunan Concordance C(i,j) dan Discordance D(i,j)
+ * untuk SELURUH pasangan alternatif sekaligus (bukan hanya 1 pasangan).
+ *
+ * Dipakai untuk:
+ *   - Accordion "Himpunan Concordance & Discordance" di halaman web
+ *   - Sheet "Himpunan C & D" pada export Excel
+ *
+ * Tidak butuh tabel baru -> dihitung langsung dari tbl_terbobot + tbl_kriteria,
+ * karena untuk jumlah alternatif yang wajar (puluhan) ini sangat cepat (<1 detik).
+ *
+ * @param mysqli $conn
+ * @return array [
+ *     'concordance' => [ ['i' => 1, 'j' => 2, 'kode_set' => ['C1','C2','C3']], ... ],
+ *     'discordance' => [ ['i' => 1, 'j' => 2, 'kode_set' => ['C4','C5']], ... ],
+ *     'alt_index'   => [alternatif_id => nomor_urut],
+ * ]
+ * @throws Exception jika data terbobot belum tersedia
+ */
+function getSemuaHimpunanCD(mysqli $conn): array
+{
+    $alternatif = [];
+    $res = $conn->query("SELECT id, nama_daerah, provinsi FROM tbl_alternatif ORDER BY id ASC");
+    while ($row = $res->fetch_assoc()) {
+        $alternatif[] = ['id' => (int) $row['id'], 'nama_daerah' => $row['nama_daerah']];
+    }
+
+    $kriteria = [];
+    $res = $conn->query("SELECT id, kode, bobot, tipe FROM tbl_kriteria ORDER BY id ASC");
+    while ($row = $res->fetch_assoc()) {
+        $kriteria[(int) $row['id']] = [
+            'kode'  => $row['kode'],
+            'bobot' => (float) $row['bobot'],
+            'tipe'  => strtolower(trim($row['tipe'])),
+        ];
+    }
+
+    if (empty($alternatif) || empty($kriteria)) {
+        throw new Exception("Data alternatif atau kriteria belum tersedia.");
+    }
+
+    $V = pivotKriteriaMatrix($conn, 'tbl_terbobot', 'nilai_v');
+    if (empty($V)) {
+        throw new Exception("Data matriks terbobot belum tersedia. Jalankan perhitungan ELECTRE terlebih dahulu.");
+    }
+
+    $altIndex = [];
+    foreach ($alternatif as $idx => $alt) {
+        $altIndex[$alt['id']] = $idx + 1; // index dimulai dari 1, sesuai notasi A1, A2, ...
+    }
+
+    $concordance = [];
+    $discordance = [];
+
+    foreach ($alternatif as $a1) {
+        foreach ($alternatif as $a2) {
+            if ($a1['id'] === $a2['id']) continue;
+
+            $i = $a1['id'];
+            $j = $a2['id'];
+
+            $setC = [];
+            $setD = [];
+
+            foreach ($kriteria as $kid => $k) {
+                $vi = $V[$i][$kid] ?? 0.0;
+                $vj = $V[$j][$kid] ?? 0.0;
+
+                $lebihBaikAtauSama = ($k['tipe'] === 'benefit') ? ($vi >= $vj) : ($vi <= $vj);
+
+                if ($lebihBaikAtauSama) {
+                    $setC[] = $k['kode'];
+                } else {
+                    $setD[] = $k['kode'];
+                }
+            }
+
+            $concordance[] = [
+                'i'        => $altIndex[$i],
+                'j'        => $altIndex[$j],
+                'kode_set' => $setC,
+            ];
+            $discordance[] = [
+                'i'        => $altIndex[$i],
+                'j'        => $altIndex[$j],
+                'kode_set' => $setD,
+            ];
+        }
+    }
+
+    return [
+        'concordance' => $concordance,
+        'discordance' => $discordance,
+        'alt_index'   => $altIndex,
+    ];
+}
+
+/**
+ * Ambil seluruh hasil ranking beserta kategori prioritasnya.
+ *
+ * Aturan kategori:
+ *   - Rank 1..5 (atau kurang dari 5 kalau total alternatif < 5) -> "Prioritas Utama" (selalu fix berdasarkan rank, bukan nilai)
+ *   - Sisanya (rank > 5) dibagi 3 berdasarkan INTERVAL nilai Phi (bukan jumlah/persentil):
+ *       rentang = Phi_maks - Phi_min (dihitung HANYA dari sisa daerah di luar top 5)
+ *       posisi  = (Phi - Phi_min) / rentang   -> nilai 0..1
+ *       posisi >= 2/3            -> "Prioritas Tinggi"
+ *       posisi >= 1/3 dan < 2/3  -> "Prioritas Sedang"
+ *       posisi < 1/3             -> "Cukup Baik"
+ *
+ * PENTING: karena berbasis interval nilai (bukan persentil), jumlah anggota
+ * tiap kategori TIDAK DIJAMIN RATA. Kalau sebaran Phi mengelompok di satu area,
+ * salah satu kategori bisa jauh lebih besar/kecil dari yang lain -- ini hasil
+ * wajar dari metode interval, bukan bug.
+ *
+ * @param mysqli $conn
+ * @return array daftar daerah dengan kategori, urut berdasarkan ranking ASC
+ */
+function getRankingWithKategori(mysqli $conn): array
+{
+    $res = $conn->query("
+        SELECT h.alternatif_id, h.phi, h.ranking, a.nama_daerah, a.provinsi
+        FROM tbl_hasil h
+        JOIN tbl_alternatif a ON a.id = h.alternatif_id
+        ORDER BY h.ranking ASC
+    ");
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) $rows[] = $row;
+
+    $total = count($rows);
+    if ($total === 0) return [];
+
+    $topN = min(5, $total); // jaga-jaga kalau total alternatif < 5
+
+    // Kumpulkan Phi dari sisa daerah (rank > topN) untuk hitung rentang interval
+    $sisaPhi = [];
+    foreach ($rows as $r) {
+        if ((int) $r['ranking'] > $topN) {
+            $sisaPhi[] = (float) $r['phi'];
+        }
+    }
+
+    $minPhi = !empty($sisaPhi) ? min($sisaPhi) : 0.0;
+    $maxPhi = !empty($sisaPhi) ? max($sisaPhi) : 0.0;
+    $rentang = $maxPhi - $minPhi;
+
+    $kategoriMap = [
+        'utama'  => ['label' => 'Prioritas Utama',  'color' => '#D9342B', 'bg' => 'rgba(217,52,43,0.12)'],
+        'tinggi' => ['label' => 'Prioritas Tinggi',  'color' => '#E37434', 'bg' => 'rgba(227,116,52,0.12)'],
+        'sedang' => ['label' => 'Prioritas Sedang',  'color' => '#D4A017', 'bg' => 'rgba(212,160,23,0.12)'],
+        'cukup'  => ['label' => 'Cukup Baik',        'color' => '#4B9DA9', 'bg' => 'rgba(75,157,169,0.12)'],
+    ];
+
+    $hasil = [];
+    foreach ($rows as $r) {
+        $rank = (int) $r['ranking'];
+        $phi  = (float) $r['phi'];
+
+        if ($rank <= $topN) {
+            $kat = 'utama';
+        } elseif ($rentang <= 0.0) {
+            // Semua Phi sisa nilainya sama -> tidak ada variasi untuk dibagi 3, default ke tengah.
+            $kat = 'sedang';
+        } else {
+            $posisi = ($phi - $minPhi) / $rentang;
+            if ($posisi >= 2 / 3) {
+                $kat = 'tinggi';
+            } elseif ($posisi >= 1 / 3) {
+                $kat = 'sedang';
+            } else {
+                $kat = 'cukup';
+            }
+        }
+
+        $hasil[] = [
+            'alternatif_id'  => (int) $r['alternatif_id'],
+            'ranking'        => $rank,
+            'phi'            => $phi,
+            'nama_daerah'    => $r['nama_daerah'],
+            'provinsi'       => $r['provinsi'],
+            'kategori'       => $kat,
+            'kategori_label' => $kategoriMap[$kat]['label'],
+            'kategori_color' => $kategoriMap[$kat]['color'],
+            'kategori_bg'    => $kategoriMap[$kat]['bg'],
+        ];
+    }
+
+    return $hasil;
+}
+
+/**
+ * Ambil breakdown nilai mentah (skala 1-5) satu daerah per kriteria,
+ * dibandingkan dengan rata-rata seluruh daerah untuk kriteria yang sama.
+ * Dipakai sebagai "bukti nyata" alasan prioritas di halaman Ranking.
+ *
+ * @param mysqli $conn
+ * @param int    $altId
+ * @return array daftar kriteria dengan nilai, rata-rata, dan status (unggul/kurang)
+ * @throws Exception jika data kriteria atau nilai belum tersedia
+ */
+function getKriteriaBreakdown(mysqli $conn, int $altId): array
+{
+    $kriteria = [];
+    $res = $conn->query("SELECT id, kode, nama_kriteria, tipe FROM tbl_kriteria ORDER BY id ASC");
+    while ($row = $res->fetch_assoc()) {
+        $kriteria[(int) $row['id']] = [
+            'kode'          => $row['kode'],
+            'nama_kriteria' => $row['nama_kriteria'],
+            'tipe'          => strtolower(trim($row['tipe'])),
+        ];
+    }
+    if (empty($kriteria)) {
+        throw new Exception("Belum ada data kriteria.");
+    }
+
+    $nilaiAlt = [];
+    $stmt = $conn->prepare("SELECT kriteria_id, nilai FROM tbl_nilai WHERE alternatif_id = ?");
+    $stmt->bind_param("i", $altId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $nilaiAlt[(int) $row['kriteria_id']] = (float) $row['nilai'];
+    }
+    if (empty($nilaiAlt)) {
+        throw new Exception("Data nilai untuk daerah ini belum tersedia.");
+    }
+
+    $rataRata = [];
+    $res = $conn->query("SELECT kriteria_id, AVG(nilai) avg_val FROM tbl_nilai GROUP BY kriteria_id");
+    while ($row = $res->fetch_assoc()) {
+        $rataRata[(int) $row['kriteria_id']] = (float) $row['avg_val'];
+    }
+
+    $hasil = [];
+    foreach ($kriteria as $kid => $k) {
+        $nilai = $nilaiAlt[$kid] ?? 0.0;
+        $rata  = $rataRata[$kid] ?? 0.0;
+
+        // "Unggul" mempertimbangkan tipe kriteria: untuk cost, nilai LEBIH RENDAH itu unggul.
+        $status = ($k['tipe'] === 'benefit')
+            ? ($nilai >= $rata ? 'unggul' : 'kurang')
+            : ($nilai <= $rata ? 'unggul' : 'kurang');
+
+        $hasil[] = [
+            'kode'          => $k['kode'],
+            'nama_kriteria' => $k['nama_kriteria'],
+            'tipe'          => $k['tipe'],
+            'nilai'         => $nilai,
+            'rata_rata'     => round($rata, 2),
+            'status'        => $status,
+        ];
+    }
+
+    return $hasil;
+}
